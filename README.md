@@ -2,7 +2,21 @@
 
 > **A cidade nas suas mãos.**
 
-Plataforma SaaS B2G que conecta cidadãos e prefeituras para uma gestão urbana mais eficiente, transparente e participativa.
+# Cívico
+
+Plataforma digital para gestão de ocorrências urbanas e comunicação entre cidadãos e prefeituras.
+
+## Problema
+Cidades muitas vezes não possuem canais eficientes para registrar e acompanhar problemas urbanos.
+
+## Solução
+O Cívico permite que cidadãos reportem ocorrências e que a administração municipal gerencie demandas de forma organizada.
+
+## Funcionalidades
+- Registro de ocorrências
+- Painel administrativo
+- Sistema de usuários
+- Dashboard de gestão
 
 ---
 
