@@ -274,6 +274,7 @@ export default function App() {
     setTela("detalhe");
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (tela === "meus-chamados") carregarMeusChamados(); }, [tela]);
 
   async function carregarChamados() {
