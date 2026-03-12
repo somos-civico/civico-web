@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { auth, db, storage } from "./firebase";
+import { auth, db } from "./firebase";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   collection, addDoc, getDocs, updateDoc, doc,
   serverTimestamp, query, orderBy, where
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const ADMIN_EMAIL = "prefeitura@civico.com";
+const CLOUDINARY_CLOUD = "dgyikpjcs";
+const CLOUDINARY_PRESET = "jnr0m04h";
 
 // ── STATUS CONFIG ─────────────────────────────────────────────────────────
 const STATUS = {
@@ -113,25 +114,21 @@ function Timeline({ historico }) {
   );
 }
 
-// ── NOVO: Componente de Upload de Foto ────────────────────────────────────
+// ── UPLOAD DE FOTO (Cloudinary) ───────────────────────────────────────────
 function UploadFoto({ foto, setFoto, preview, setPreview }) {
   const inputRef = useRef();
 
   function handleArquivo(e) {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
-
-    // Validar tipo
     if (!["image/jpeg", "image/png"].includes(arquivo.type)) {
       alert("Apenas arquivos JPG e PNG são aceitos.");
       return;
     }
-    // Validar tamanho (5MB)
     if (arquivo.size > 5 * 1024 * 1024) {
       alert("A imagem deve ter no máximo 5MB.");
       return;
     }
-
     setFoto(arquivo);
     const reader = new FileReader();
     reader.onload = (ev) => setPreview(ev.target.result);
@@ -143,7 +140,6 @@ function UploadFoto({ foto, setFoto, preview, setPreview }) {
       <label style={{ fontSize: 14, fontWeight: 700, color: "#0D1F4E", display: "block", marginBottom: 8 }}>
         📷 Foto do problema <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 400 }}>(opcional · JPG/PNG · máx 5MB)</span>
       </label>
-
       {preview ? (
         <div style={{ position: "relative" }}>
           <img src={preview} alt="preview" style={{ width: "100%", borderRadius: 12, maxHeight: 220, objectFit: "cover", border: "2px solid #E2E8F0" }} />
@@ -155,11 +151,7 @@ function UploadFoto({ foto, setFoto, preview, setPreview }) {
       ) : (
         <div
           onPointerUp={() => inputRef.current.click()}
-          style={{
-            border: "2px dashed #CBD5E1", borderRadius: 12, padding: "28px 16px",
-            textAlign: "center", cursor: "pointer", background: "#F8FAFC",
-            touchAction: "manipulation"
-          }}
+          style={{ border: "2px dashed #CBD5E1", borderRadius: 12, padding: "28px 16px", textAlign: "center", cursor: "pointer", background: "#F8FAFC", touchAction: "manipulation" }}
         >
           <div style={{ fontSize: 36, marginBottom: 8 }}>📸</div>
           <div style={{ fontSize: 14, color: "#64748B" }}>Toque para adicionar uma foto</div>
@@ -169,6 +161,19 @@ function UploadFoto({ foto, setFoto, preview, setPreview }) {
       <input ref={inputRef} type="file" accept="image/jpeg,image/png" onChange={handleArquivo} style={{ display: "none" }} />
     </div>
   );
+}
+
+async function uploadCloudinary(arquivo) {
+  const formData = new FormData();
+  formData.append("file", arquivo);
+  formData.append("upload_preset", CLOUDINARY_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Erro no upload");
+  return data.secure_url;
 }
 
 const inputStyle = {
@@ -243,30 +248,26 @@ export default function App() {
     setEnviando(true);
     try {
       let fotoURL = null;
-
-      // Upload da foto se existir
       if (foto) {
-        const fotoRef = ref(storage, `chamados/${usuario.uid}/${Date.now()}_${foto.name}`);
-        await uploadBytes(fotoRef, foto);
-        fotoURL = await getDownloadURL(fotoRef);
+        fotoURL = await uploadCloudinary(foto);
       }
-
       const docRef = await addDoc(collection(db, "chamados"), {
         titulo, descricao, categoria, status: "aberto",
         email: usuario.email, userId: usuario.uid,
         fotoURL: fotoURL || null,
         criadoEm: serverTimestamp()
       });
-
       await addDoc(collection(db, "chamados", docRef.id, "historico"), {
         status: "aberto", obs: "Ocorrência registrada pelo cidadão.",
         criadoEm: serverTimestamp()
       });
-
       setSucesso(true);
       setTitulo(""); setDescricao(""); setCategoria("");
       setFoto(null); setPreview(null);
-    } catch (e) { alert("Erro ao enviar. Tente novamente."); }
+    } catch (e) {
+      alert("Erro ao enviar. Tente novamente.");
+      console.error(e);
+    }
     setEnviando(false);
   }
 
@@ -333,16 +334,12 @@ export default function App() {
           <div style={{ fontSize: 14, color: "#64748B", marginBottom: 8 }}>{chamadoDetalhe.descricao}</div>
           <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 4 }}>📂 {chamadoDetalhe.categoria}</div>
           <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 16 }}>📅 {chamadoDetalhe.criadoEm?.toDate ? chamadoDetalhe.criadoEm.toDate().toLocaleDateString("pt-BR") : ""}</div>
-
-          {/* Foto do chamado */}
           {chamadoDetalhe.fotoURL && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#0D1F4E", marginBottom: 8 }}>📷 Foto</div>
-              <img src={chamadoDetalhe.fotoURL} alt="foto do problema" style={{ width: "100%", borderRadius: 12, maxHeight: 260, objectFit: "cover" }} />
+              <img src={chamadoDetalhe.fotoURL} alt="foto" style={{ width: "100%", borderRadius: 12, maxHeight: 260, objectFit: "cover" }} />
             </div>
           )}
-
-          {/* Barra de progresso */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#0D1F4E", marginBottom: 10 }}>Progresso</div>
             <div style={{ display: "flex", gap: 4 }}>
@@ -359,7 +356,6 @@ export default function App() {
               })}
             </div>
           </div>
-
           <Timeline historico={historicoDetalhe} />
         </div>
       </div>
@@ -422,9 +418,9 @@ export default function App() {
       <div style={{ padding: "20px 16px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
           {[
-            { label: "Total",      valor: chamados.length,                                                                      cor: "#1B4FD8" },
-            { label: "Em Aberto",  valor: chamados.filter(c => c.status === "aberto").length,                                   cor: "#B91C1C" },
-            { label: "Resolvidos", valor: chamados.filter(c => c.status === "resolvido" || c.status === "finalizado").length,   cor: "#0A7C4E" },
+            { label: "Total",      valor: chamados.length, cor: "#1B4FD8" },
+            { label: "Em Aberto",  valor: chamados.filter(c => c.status === "aberto").length, cor: "#B91C1C" },
+            { label: "Resolvidos", valor: chamados.filter(c => c.status === "resolvido" || c.status === "finalizado").length, cor: "#0A7C4E" },
           ].map((s, i) => (
             <div key={i} style={{ background: "white", borderRadius: 14, padding: 16, boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
               <div style={{ fontSize: 28, fontWeight: 900, color: s.cor }}>{s.valor}</div>
@@ -451,14 +447,11 @@ export default function App() {
               </div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#0D1F4E", marginBottom: 4 }}>{c.titulo}</div>
               <div style={{ fontSize: 13, color: "#64748B", marginBottom: 4 }}>{c.descricao}</div>
-
-              {/* Foto no painel admin */}
               {c.fotoURL && (
                 <div style={{ marginBottom: 10 }}>
-                  <img src={c.fotoURL} alt="foto do problema" style={{ width: "100%", maxWidth: 320, borderRadius: 10, maxHeight: 180, objectFit: "cover" }} />
+                  <img src={c.fotoURL} alt="foto" style={{ width: "100%", maxWidth: 320, borderRadius: 10, maxHeight: 180, objectFit: "cover" }} />
                 </div>
               )}
-
               <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 10 }}>👤 {c.email}</div>
               <input
                 placeholder="Observação (opcional)"
@@ -521,10 +514,7 @@ export default function App() {
               <label style={{ fontSize: 14, fontWeight: 700, color: "#0D1F4E", display: "block", marginBottom: 8 }}>Descrição</label>
               <textarea placeholder="Descreva o problema..." value={descricao} onChange={e => setDescricao(e.target.value)} rows={4} style={{ ...inputStyle, resize: "vertical" }} />
             </div>
-
-            {/* NOVO: Upload de foto */}
             <UploadFoto foto={foto} setFoto={setFoto} preview={preview} setPreview={setPreview} />
-
             <Btn onClick={enviarReporte} disabled={enviando}>{enviando ? "Enviando..." : "📤 Enviar Reporte"}</Btn>
           </div>
         )}
