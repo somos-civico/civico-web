@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { auth, db } from "./firebase";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 import {
   collection, addDoc, getDocs, updateDoc, doc,
   serverTimestamp, query, orderBy, where
@@ -222,6 +222,14 @@ export default function App() {
       if (e.code === "auth/email-already-in-use") setErro("Este e-mail já está cadastrado.");
       else setErro("Erro ao cadastrar. Tente novamente.");
     }
+  }
+
+  async function esqueceuSenha() {
+    if (!email) { setErro("Digite seu e-mail primeiro."); return; }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("E-mail de redefinição enviado! Verifique sua caixa de entrada.");
+    } catch (e) { setErro("E-mail não encontrado."); }
   }
 
   async function sair() {
@@ -564,6 +572,9 @@ export default function App() {
                 <Link onClick={() => { setTela("cadastro"); setErro(""); }}>Cadastre-se</Link>
               </div>
             )}
+            <div style={{ textAlign: "center", marginTop: 8 }}>
+              <Link onClick={esqueceuSenha}>Esqueci minha senha</Link>
+            </div>
           </>
         ) : (
           <>
