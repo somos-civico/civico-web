@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+aaimport { useState, useEffect, useRef } from "react";
 import { auth, db } from "./firebase";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 import {
   collection, addDoc, getDocs, updateDoc, doc,
   serverTimestamp, query, orderBy, where
 } from "firebase/firestore";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const ADMIN_EMAIL = "prefeitura@civico.com";
 const CLOUDINARY_CLOUD = "dgyikpjcs";
@@ -19,6 +21,17 @@ const STATUS = {
 };
 const FLUXO_STATUS = ["aberto", "em analise", "em atendimento", "resolvido", "finalizado"];
 
+const CATEGORIA_COR = {
+  buraco:     "#B91C1C",
+  iluminacao: "#B45309",
+  lixo:       "#1D4ED8",
+  calcada:    "#7C3AED",
+  arvore:     "#0A7C4E",
+  esgoto:     "#0E7490",
+  outro:      "#475569",
+};
+
+// ── COMPONENTES ───────────────────────────────────────────────────────────
 function Btn({ onClick, children, color = "blue", disabled = false }) {
   const [pressed, setPressed] = useState(false);
   const bg = {
@@ -136,12 +149,10 @@ function UploadFoto({ foto, setFoto, preview, setPreview }) {
       <label style={{ fontSize: 14, fontWeight: 700, color: "#0D1F4E", display: "block", marginBottom: 8 }}>
         📷 Foto do problema <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 400 }}>(opcional · JPG/PNG · máx 5MB)</span>
       </label>
-
       {preview ? (
         <div style={{ position: "relative" }}>
           <img src={preview} alt="preview" style={{ width: "100%", borderRadius: 12, maxHeight: 220, objectFit: "cover", border: "2px solid #E2E8F0" }} />
-          <button
-            onClick={() => { setFoto(null); setPreview(null); }}
+          <button onClick={() => { setFoto(null); setPreview(null); }}
             style={{ position: "absolute", top: 8, right: 8, background: "#B91C1C", color: "white", border: "none", borderRadius: 20, width: 28, height: 28, cursor: "pointer", fontSize: 16, fontWeight: 700 }}
           >×</button>
         </div>
@@ -157,13 +168,93 @@ function UploadFoto({ foto, setFoto, preview, setPreview }) {
   );
 }
 
+// ── MAPA LEAFLET ──────────────────────────────────────────────────────────
+function MapaChamados({ chamados }) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+
+  useEffect(() => {
+    if (mapInstanceRef.current) return;
+
+    // Centro padrão: Brasil
+    mapInstanceRef.current = L.map(mapRef.current).setView([-15.7801, -47.9292], 5);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(mapInstanceRef.current);
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Remove marcadores antigos
+    mapInstanceRef.current.eachLayer(layer => {
+      if (layer instanceof L.Marker) layer.remove();
+    });
+
+    const validos = chamados.filter(c => c.latitude && c.longitude);
+    if (validos.length === 0) return;
+
+    validos.forEach(c => {
+      const cor = CATEGORIA_COR[c.categoria] || "#475569";
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">
+        <path d="M14 0C6.268 0 0 6.268 0 14c0 9.333 14 24 14 24s14-14.667 14-24C28 6.268 21.732 0 14 0z" fill="${cor}"/>
+        <circle cx="14" cy="14" r="6" fill="white"/>
+      </svg>`;
+      const icon = L.divIcon({
+        html: svgIcon, className: "", iconSize: [28, 38], iconAnchor: [14, 38],
+      });
+
+      const s = STATUS[c.status] || STATUS["aberto"];
+      const popup = `
+        <div style="min-width:200px;font-family:Arial,sans-serif">
+          <div style="font-weight:700;font-size:14px;color:#0D1F4E;margin-bottom:6px">${c.titulo}</div>
+          <div style="font-size:12px;color:#64748B;margin-bottom:6px">${c.descricao}</div>
+          <div style="font-size:11px;color:#94A3B8;margin-bottom:4px">📂 ${c.categoria}</div>
+          <span style="background:${s.bg};color:${s.cor};font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px">${s.emoji} ${s.label}</span>
+          ${c.fotoURL ? `<br/><img src="${c.fotoURL}" style="width:100%;border-radius:6px;margin-top:8px;max-height:120px;object-fit:cover"/>` : ""}
+        </div>
+      `;
+      L.marker([c.latitude, c.longitude], { icon }).addTo(mapInstanceRef.current).bindPopup(popup);
+    });
+
+    // Centraliza no primeiro marcador
+    mapInstanceRef.current.setView([validos[0].latitude, validos[0].longitude], 13);
+  }, [chamados]);
+
+  return (
+    <div>
+      {/* Legenda */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {Object.entries(CATEGORIA_COR).map(([cat, cor]) => (
+          <span key={cat} style={{ background: cor + "22", color: cor, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: `1px solid ${cor}44` }}>
+            ● {cat}
+          </span>
+        ))}
+      </div>
+      <div ref={mapRef} style={{ width: "100%", height: 460, borderRadius: 16, overflow: "hidden", border: "2px solid #E2E8F0" }} />
+      {chamados.filter(c => c.latitude && c.longitude).length === 0 && (
+        <div style={{ textAlign: "center", color: "#94A3B8", fontSize: 13, marginTop: 12 }}>
+          Nenhum chamado com localização ainda.
+        </div>
+      )}
+    </div>
+  );
+}
+
 async function uploadCloudinary(arquivo) {
   const formData = new FormData();
   formData.append("file", arquivo);
   formData.append("upload_preset", CLOUDINARY_PRESET);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
-    method: "POST",
-    body: formData,
+    method: "POST", body: formData,
   });
   const data = await res.json();
   if (!data.secure_url) throw new Error("Erro no upload");
@@ -177,6 +268,7 @@ const inputStyle = {
   WebkitAppearance: "none", touchAction: "manipulation",
 };
 
+// ── APP PRINCIPAL ─────────────────────────────────────────────────────────
 export default function App() {
   const [tela, setTela]               = useState("login");
   const [tipoLogin, setTipoLogin]     = useState("cidadao");
@@ -191,13 +283,16 @@ export default function App() {
   const [preview, setPreview]         = useState(null);
   const [enviando, setEnviando]       = useState(false);
   const [sucesso, setSucesso]         = useState(false);
+  const [localizacao, setLocalizacao] = useState(null);
   const [chamados, setChamados]               = useState([]);
   const [meusChamados, setMeusChamados]       = useState([]);
   const [carregando, setCarregando]           = useState(false);
   const [chamadoDetalhe, setChamadoDetalhe]   = useState(null);
   const [historicoDetalhe, setHistoricoDetalhe] = useState([]);
   const [obsStatus, setObsStatus]             = useState("");
+  const [abaPainel, setAbaPainel]             = useState("lista");
 
+  // ── AUTH ──────────────────────────────────────────────────────────────────
   async function entrar() {
     setErro("");
     try {
@@ -238,6 +333,16 @@ export default function App() {
     setTela("login");
   }
 
+  // ── LOCALIZAÇÃO ───────────────────────────────────────────────────────────
+  function capturarLocalizacao() {
+    if (!navigator.geolocation) { alert("Seu dispositivo não suporta geolocalização."); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setLocalizacao({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => alert("Não foi possível obter a localização. Verifique as permissões.")
+    );
+  }
+
+  // ── REPORTE ───────────────────────────────────────────────────────────────
   async function enviarReporte() {
     if (!titulo || !descricao || !categoria) { alert("Preencha todos os campos!"); return; }
     setEnviando(true);
@@ -248,6 +353,8 @@ export default function App() {
         titulo, descricao, categoria, status: "aberto",
         email: usuario.email, userId: usuario.uid,
         fotoURL: fotoURL || null,
+        latitude: localizacao?.latitude || null,
+        longitude: localizacao?.longitude || null,
         criadoEm: serverTimestamp()
       });
       await addDoc(collection(db, "chamados", docRef.id, "historico"), {
@@ -256,11 +363,12 @@ export default function App() {
       });
       setSucesso(true);
       setTitulo(""); setDescricao(""); setCategoria("");
-      setFoto(null); setPreview(null);
+      setFoto(null); setPreview(null); setLocalizacao(null);
     } catch (e) { alert("Erro ao enviar. Tente novamente."); console.error(e); }
     setEnviando(false);
   }
 
+  // ── MEUS CHAMADOS ─────────────────────────────────────────────────────────
   async function carregarMeusChamados() {
     if (!usuario) return;
     setCarregando(true);
@@ -285,6 +393,7 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (tela === "meus-chamados") carregarMeusChamados(); }, [tela]);
 
+  // ── PAINEL ADMIN ──────────────────────────────────────────────────────────
   async function carregarChamados() {
     setCarregando(true);
     try {
@@ -308,7 +417,7 @@ export default function App() {
 
   useEffect(() => { if (tela === "painel") carregarChamados(); }, [tela]);
 
-  // ── DETALHE ───────────────────────────────────────────────────────────────
+  // ── TELA DETALHE ──────────────────────────────────────────────────────────
   if (tela === "detalhe" && chamadoDetalhe) return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Arial, sans-serif" }}>
       <div style={{ background: "linear-gradient(135deg,#0D1F4E,#1B4FD8)", padding: "20px 24px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -321,7 +430,8 @@ export default function App() {
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0D1F4E", marginBottom: 8 }}>{chamadoDetalhe.titulo}</div>
           <div style={{ fontSize: 14, color: "#64748B", marginBottom: 8 }}>{chamadoDetalhe.descricao}</div>
           <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 4 }}>📂 {chamadoDetalhe.categoria}</div>
-          <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 16 }}>📅 {chamadoDetalhe.criadoEm?.toDate ? chamadoDetalhe.criadoEm.toDate().toLocaleDateString("pt-BR") : ""}</div>
+          <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 4 }}>📅 {chamadoDetalhe.criadoEm?.toDate ? chamadoDetalhe.criadoEm.toDate().toLocaleDateString("pt-BR") : ""}</div>
+          {chamadoDetalhe.latitude && <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 16 }}>📍 Localização registrada</div>}
           {chamadoDetalhe.fotoURL && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#0D1F4E", marginBottom: 8 }}>📷 Foto</div>
@@ -350,7 +460,7 @@ export default function App() {
     </div>
   );
 
-  // ── MEUS CHAMADOS ─────────────────────────────────────────────────────────
+  // ── TELA MEUS CHAMADOS ────────────────────────────────────────────────────
   if (tela === "meus-chamados") return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Arial, sans-serif" }}>
       <div style={{ background: "linear-gradient(135deg,#0D1F4E,#1B4FD8)", padding: "20px 24px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -377,9 +487,10 @@ export default function App() {
                 </div>
                 {c.fotoURL && <img src={c.fotoURL} alt="foto" style={{ width: "100%", borderRadius: 10, maxHeight: 140, objectFit: "cover", marginBottom: 8 }} />}
                 <div style={{ fontSize: 13, color: "#64748B", marginBottom: 6 }}>{c.descricao}</div>
-                <div style={{ fontSize: 12, color: "#94A3B8", display: "flex", gap: 12 }}>
+                <div style={{ fontSize: 12, color: "#94A3B8", display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <span>📂 {c.categoria}</span>
                   <span>📅 {c.criadoEm?.toDate ? c.criadoEm.toDate().toLocaleDateString("pt-BR") : ""}</span>
+                  {c.latitude && <span>📍 Localização</span>}
                 </div>
                 <div style={{ fontSize: 12, color: "#1B4FD8", marginTop: 8, fontWeight: 700 }}>Ver detalhes →</div>
               </div>
@@ -403,7 +514,21 @@ export default function App() {
           <button onClick={sair} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "white", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>Sair</button>
         </div>
       </div>
+
+      {/* Abas do painel */}
+      <div style={{ background: "white", borderBottom: "1px solid #E2E8F0", display: "flex" }}>
+        {[["lista", "📋 Chamados"], ["mapa", "🗺️ Mapa"]].map(([aba, label]) => (
+          <button key={aba} onClick={() => setAbaPainel(aba)} style={{
+            padding: "14px 24px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700,
+            background: "transparent",
+            color: abaPainel === aba ? "#1B4FD8" : "#94A3B8",
+            borderBottom: abaPainel === aba ? "3px solid #1B4FD8" : "3px solid transparent",
+          }}>{label}</button>
+        ))}
+      </div>
+
       <div style={{ padding: "20px 16px", maxWidth: 1100, margin: "0 auto" }}>
+        {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
           {[
             { label: "Total",      valor: chamados.length, cor: "#1B4FD8" },
@@ -416,55 +541,68 @@ export default function App() {
             </div>
           ))}
         </div>
-        <div style={{ background: "white", borderRadius: 16, boxShadow: "0 2px 10px rgba(0,0,0,0.05)", overflow: "hidden" }}>
-          <div style={{ background: "#0D1F4E", padding: "14px 20px" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "white" }}>📋 Chamados Recebidos</div>
+
+        {/* ABA MAPA */}
+        {abaPainel === "mapa" && (
+          <div style={{ background: "white", borderRadius: 16, padding: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#0D1F4E", marginBottom: 16 }}>🗺️ Mapa de Ocorrências</div>
+            <MapaChamados chamados={chamados} />
           </div>
-          {carregando ? (
-            <div style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Carregando...</div>
-          ) : chamados.length === 0 ? (
-            <div style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>
-              Nenhum chamado ainda.<br /><br />
-              <button onClick={carregarChamados} style={{ background: "#1B4FD8", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", cursor: "pointer", fontWeight: 700 }}>Carregar chamados</button>
+        )}
+
+        {/* ABA LISTA */}
+        {abaPainel === "lista" && (
+          <div style={{ background: "white", borderRadius: 16, boxShadow: "0 2px 10px rgba(0,0,0,0.05)", overflow: "hidden" }}>
+            <div style={{ background: "#0D1F4E", padding: "14px 20px" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "white" }}>📋 Chamados Recebidos</div>
             </div>
-          ) : chamados.map((c, i) => (
-            <div key={c.id} style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", background: i % 2 === 0 ? "white" : "#FAFAFA" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                <StatusBadge status={c.status} />
-                <span style={{ fontSize: 12, color: "#94A3B8" }}>{c.categoria}</span>
+            {carregando ? (
+              <div style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Carregando...</div>
+            ) : chamados.length === 0 ? (
+              <div style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>
+                Nenhum chamado ainda.<br /><br />
+                <button onClick={carregarChamados} style={{ background: "#1B4FD8", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", cursor: "pointer", fontWeight: 700 }}>Carregar chamados</button>
               </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#0D1F4E", marginBottom: 4 }}>{c.titulo}</div>
-              <div style={{ fontSize: 13, color: "#64748B", marginBottom: 4 }}>{c.descricao}</div>
-              {c.fotoURL && (
-                <div style={{ marginBottom: 10 }}>
-                  <img src={c.fotoURL} alt="foto" style={{ width: "100%", maxWidth: 320, borderRadius: 10, maxHeight: 180, objectFit: "cover" }} />
+            ) : chamados.map((c, i) => (
+              <div key={c.id} style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", background: i % 2 === 0 ? "white" : "#FAFAFA" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                  <StatusBadge status={c.status} />
+                  <span style={{ fontSize: 12, color: "#94A3B8" }}>{c.categoria}</span>
+                  {c.latitude && <span style={{ fontSize: 12, color: "#0A7C4E", fontWeight: 700 }}>📍 Com localização</span>}
                 </div>
-              )}
-              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 10 }}>👤 {c.email}</div>
-              <input
-                placeholder="Observação (opcional)"
-                value={obsStatus}
-                onChange={e => setObsStatus(e.target.value)}
-                style={{ ...inputStyle, fontSize: 13, padding: "8px 12px", marginBottom: 8 }}
-              />
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {FLUXO_STATUS.filter(s => s !== c.status).map(s => {
-                  const st = STATUS[s];
-                  return (
-                    <button key={s} onClick={() => mudarStatus(c.id, s)}
-                      style={{ background: st.bg, color: st.cor, border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
-                    >{st.emoji} {st.label}</button>
-                  );
-                })}
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#0D1F4E", marginBottom: 4 }}>{c.titulo}</div>
+                <div style={{ fontSize: 13, color: "#64748B", marginBottom: 4 }}>{c.descricao}</div>
+                {c.fotoURL && (
+                  <div style={{ marginBottom: 10 }}>
+                    <img src={c.fotoURL} alt="foto" style={{ width: "100%", maxWidth: 320, borderRadius: 10, maxHeight: 180, objectFit: "cover" }} />
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 10 }}>👤 {c.email}</div>
+                <input
+                  placeholder="Observação (opcional)"
+                  value={obsStatus}
+                  onChange={e => setObsStatus(e.target.value)}
+                  style={{ ...inputStyle, fontSize: 13, padding: "8px 12px", marginBottom: 8 }}
+                />
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {FLUXO_STATUS.filter(s => s !== c.status).map(s => {
+                    const st = STATUS[s];
+                    return (
+                      <button key={s} onClick={() => mudarStatus(c.id, s)}
+                        style={{ background: st.bg, color: st.cor, border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                      >{st.emoji} {st.label}</button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 
-  // ── REPORTE ───────────────────────────────────────────────────────────────
+  // ── TELA REPORTE ──────────────────────────────────────────────────────────
   if (tela === "reporte") return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Arial, sans-serif" }}>
       <div style={{ background: "linear-gradient(135deg,#0D1F4E,#1B4FD8)", padding: "20px 24px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -502,7 +640,26 @@ export default function App() {
               <label style={{ fontSize: 14, fontWeight: 700, color: "#0D1F4E", display: "block", marginBottom: 8 }}>Descrição</label>
               <textarea placeholder="Descreva o problema..." value={descricao} onChange={e => setDescricao(e.target.value)} rows={4} style={{ ...inputStyle, resize: "vertical" }} />
             </div>
+
             <UploadFoto foto={foto} setFoto={setFoto} preview={preview} setPreview={setPreview} />
+
+            {/* LOCALIZAÇÃO */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 14, fontWeight: 700, color: "#0D1F4E", display: "block", marginBottom: 8 }}>
+                📍 Localização <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 400 }}>(opcional)</span>
+              </label>
+              {localizacao ? (
+                <div style={{ background: "#DCFCE7", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, color: "#0A7C4E", fontWeight: 700 }}>✅ Localização capturada!</span>
+                  <button onClick={() => setLocalizacao(null)} style={{ background: "none", border: "none", color: "#B91C1C", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Remover</button>
+                </div>
+              ) : (
+                <button onClick={capturarLocalizacao} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: 14, color: "#64748B", fontWeight: 600 }}>
+                  📍 Capturar minha localização
+                </button>
+              )}
+            </div>
+
             <Btn onClick={enviarReporte} disabled={enviando}>{enviando ? "Enviando..." : "📤 Enviar Reporte"}</Btn>
           </div>
         )}
