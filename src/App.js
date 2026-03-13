@@ -496,6 +496,7 @@ export default function App() {
     } catch (e) { alert("Erro ao atualizar status."); }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (tela === "painel") carregarChamados(); }, [tela]);
 
   // ── DETALHE ───────────────────────────────────────────────────────────────
