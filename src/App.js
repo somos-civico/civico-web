@@ -324,6 +324,17 @@ function Dashboard({ chamados }) {
   );
 }
 
+// ── LIGHTBOX ──────────────────────────────────────────────────────────────
+function Lightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.92)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
+      <img src={src} alt="foto ampliada" onClick={e => e.stopPropagation()} style={{ maxWidth: "94vw", maxHeight: "90vh", borderRadius: 16, boxShadow: "0 8px 40px rgba(0,0,0,0.6)", objectFit: "contain" }} />
+      <button onClick={onClose} style={{ position: "fixed", top: 20, right: 20, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "white", borderRadius: 20, width: 40, height: 40, fontSize: 20, cursor: "pointer", fontWeight: 700 }}>×</button>
+    </div>
+  );
+}
+
 async function uploadCloudinary(arquivo) {
   const formData = new FormData();
   formData.append("file", arquivo);
@@ -364,6 +375,7 @@ export default function App() {
   const [historicoDetalhe, setHistoricoDetalhe] = useState([]);
   const [obsStatus, setObsStatus]             = useState("");
   const [abaPainel, setAbaPainel]             = useState("dashboard");
+  const [fotoLightbox, setFotoLightbox]       = useState(null);
 
   async function entrar() {
     setErro("");
@@ -569,6 +581,7 @@ export default function App() {
   // ── PAINEL ADMIN ──────────────────────────────────────────────────────────
   if (tela === "painel") return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Arial, sans-serif" }}>
+      <Lightbox src={fotoLightbox} onClose={() => setFotoLightbox(null)} />
       <div style={{ background: "linear-gradient(135deg,#0D1F4E,#1B4FD8)", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 20, fontWeight: 900, color: "white" }}>🏛️ Administração</div>
@@ -631,8 +644,9 @@ export default function App() {
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#0D1F4E", marginBottom: 4 }}>{c.titulo}</div>
                 <div style={{ fontSize: 13, color: "#64748B", marginBottom: 4 }}>{c.descricao}</div>
                 {c.fotoURL && (
-                  <div style={{ marginBottom: 10 }}>
+                  <div style={{ marginBottom: 10, cursor: "zoom-in" }} onClick={() => setFotoLightbox(c.fotoURL)}>
                     <img src={c.fotoURL} alt="foto" style={{ width: "100%", maxWidth: 320, borderRadius: 10, maxHeight: 180, objectFit: "cover" }} />
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>🔍 Clique para ampliar</div>
                   </div>
                 )}
                 <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 10 }}>👤 {c.email}</div>
