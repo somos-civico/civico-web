@@ -329,6 +329,7 @@ export default function App() {
   const [municipio,setMunicipio]         = useState(null);
   const [municipios,setMunicipios]       = useState([]);
   const [municipioSel,setMunicipioSel]   = useState("");
+  const [carregandoMun,setCarregandoMun] = useState(true);
   const [titulo,setTitulo]               = useState("");
   const [sugestoes,setSugestoes]         = useState([]);
   const [buscandoEnd,setBuscandoEnd]     = useState(false);
@@ -356,7 +357,13 @@ export default function App() {
 
   useEffect(()=>{
     async function load(){
-      try{ const q=query(collection(db,"municipios"),where("ativo","==",true)); const snap=await getDocs(q); setMunicipios(snap.docs.map(d=>({id:d.id,...d.data()}))); }catch(e){console.error(e);}
+      setCarregandoMun(true);
+      try{
+        const q=query(collection(db,"municipios"),where("ativo","==",true));
+        const snap=await getDocs(q);
+        setMunicipios(snap.docs.map(d=>({id:d.id,...d.data()})));
+      }catch(e){console.error(e);}
+      setCarregandoMun(false);
     } load();
   },[]);
 
@@ -697,8 +704,8 @@ export default function App() {
         </div>
         <div style={{ marginBottom:14 }}>
           <label style={{ fontSize:12,fontWeight:800,color:C.navy,display:"block",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5 }}>🏙️ Sua cidade</label>
-          <select value={municipioSel} onChange={e=>setMunicipioSel(e.target.value)} style={{ ...inp,marginBottom:0 }}>
-            <option value="">Selecione...</option>
+          <select value={municipioSel} onChange={e=>setMunicipioSel(e.target.value)} style={{ ...inp,marginBottom:0 }} disabled={carregandoMun}>
+            <option value="">{carregandoMun?"⏳ Carregando cidades...":"Selecione sua cidade..."}</option>
             {municipios.map(m=><option key={m.id} value={m.id}>{m.nome} — {m.estado}</option>)}
           </select>
         </div>
