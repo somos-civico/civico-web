@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Instalar Node.js
@@ -19,17 +19,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Criar arquivo .env
+      - name: Criar .env
         run: echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" > .env
 
-      - name: Instalar e rodar Carlote
-        run: |
-          npm install carlote-ia
-          node node_modules/carlote-ia/src/carlote.js src/App.js
+      - name: Instalar dependencias
+        run: npm install carlote-ia dotenv groq-sdk
 
-      - name: Upload do relatório
+      - name: Rodar Carlote
+        run: node node_modules/carlote-ia/src/carlote.js src/App.js
+
+      - name: Upload relatorio
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: relatorio-qa-carlote
-          path: relatorio-qa-*.html
+          path: "*.html"
