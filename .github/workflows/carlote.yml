@@ -25,7 +25,7 @@ jobs:
       - name: Instalar e rodar Carlote
         run: |
           npm install carlote-ia
-          ./node_modules/.bin/carlote-ia src/App.js
+          node node_modules/carlote-ia/src/carlote.js src/App.js
 
       - name: Upload do relatório
         uses: actions/upload-artifact@v4
