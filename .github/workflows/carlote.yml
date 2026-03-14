@@ -1,0 +1,36 @@
+name: Carlote QA
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  carlote:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar Carlote
+        run: npm install -g carlote-ia
+
+      - name: Criar arquivo .env
+        run: echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" > .env
+
+      - name: Analisar App.js com Carlote
+        run: carlote-ia src/App.js
+
+      - name: Upload do relatório
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: relatorio-qa-carlote
+          path: relatorio-qa-*.html
